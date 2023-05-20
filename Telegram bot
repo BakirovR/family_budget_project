@@ -1,0 +1,293 @@
+const token = "";
+const chat_id = "";
+const sheetname = 'Messages';
+const list_id = ''
+const webAppUrl = '';
+
+
+const sheet = SpreadsheetApp.openById(list_id).getSheetByName(sheetname);
+const emojiRegex = /(?:[\p{Emoji_Modifier_Base}\p{Emoji_Presentation}]\uFE0F?|\p{Emoji}\uFE0F?)/gu;
+
+
+
+const expenses = {
+  '🍔 Еда': ['🛒 Магазин', '🍴 Питание вне дома'],
+  '🏠 Дом': ['💳 Кредит', '🔧 Ремонт', '🏢 Аренда'],
+  '🎉 Развлечения': ['✈️ Путешествия', '🎲 Активности'],
+  '🚗 Транспорт': ['🚙 Автомобиль', '🚆 Общественный транспорт', '🛴 Разное'],
+  '🔍 Другое': ['🐶 Животные', '🎓 Образование', '🤲 Благотворительность', '💰 Фонды', '🎁 Подарки', '🏥 Здоровье', '👕 Одежда', '🆕 Другое']
+};
+
+
+// Объект категорий и подкатегорий для доходов
+const income = {
+  '💰 Зарплата': ['💼 Основная работа', '💸 Дополнительная'],
+  '🏢 Бизнес': ['📈 Консультации', '🏠 Сдача жилья'],
+  '💹 Инвестирование': ['💰 Депозит', '📈 Акции', '📊 Облигации', '💼 Фонды']
+};
+
+// Объект банк
+const banks = ['🍏 Сбербанк', '🍋 Тинькофф', '🍌 Райффайзен', '🍎 Альфа-Банк', '💵 Наличные'];
+
+function getMe() {
+  const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/getMe`);
+  console.log(response.getContentText());
+
+
+function setWebhook() {
+  
+  const response = UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${webAppUrl}`);
+  console.log(response.getContentText());
+}
+}
+
+
+function sendText(chat_id, text) {
+  const data = {
+    method: 'sendMessage',
+    chat_id: String(chat_id),
+    text: text 
+  };
+
+  if (text === 'Описание:') { // добавленная ветка
+    handleDescriptionInput(chat_id, text);
+  } else {
+    UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'post', payload: data });
+  }
+}
+
+
+function sendIncomeOrExpenses(chat_id) {
+  const keyboard = {
+    keyboard: [
+      [{ text: '🧾 Расход' }, { text: '💰 Доход' }]
+    ],
+    one_time_keyboard: true,
+    resize_keyboard: true
+  };
+
+  const data = {
+    method: 'sendMessage',
+    chat_id: String(chat_id),
+    text: 'Выбери тип:',
+    reply_markup: JSON.stringify(keyboard)
+  };
+
+  UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'post', payload: data });
+}
+
+
+
+
+
+
+function sendCategories(chat_id, type) {
+  let keyboard = {
+    keyboard: Object.keys(type === 'income' ? income : expenses).map(category => [{ text: category }]),
+    one_time_keyboard: true,
+    resize_keyboard: true
+  };
+
+  const data = {
+    method: 'sendMessage',
+    chat_id: String(chat_id),
+    text: `Выбери категорию для ${type === 'income' ? 'доходов' : 'расходов'} `,
+    reply_markup: JSON.stringify(keyboard)
+  };
+
+  UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'post', payload: data });
+  
+}
+
+
+
+function handleCategorySelection(chat_id, category, type) {
+  const lastRow = sheet.getLastRow();
+  const data = [new Date(), '', category.replace(emojiRegex, '').replace(/\s/g, ''), '', '','', type === 'income' ? 'Доход' : 'Расход']; 
+  sheet.getRange(lastRow + 1, 1, 1, data.length).setValues([data]);
+  sendSubcategories(chat_id, category, type);
+}
+
+
+
+
+function sendSubcategories(chat_id, category, type) {
+  let subcategories = type === 'income' ? income[category] : expenses[category];
+  let keyboard = {
+    keyboard: subcategories.map(subcategory => [{ text: "Подкатегория: " + subcategory }]),
+    one_time_keyboard: true,
+    resize_keyboard: true
+  };
+
+  const data = {
+    method: 'sendMessage',
+    chat_id: String(chat_id),
+    text: `Выбери подкатегорию для ${type === 'income' ? 'доходов' : 'расходов'}:`,
+    reply_markup: JSON.stringify(keyboard)
+  };
+
+  UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'post', payload: data });
+}
+
+
+function handleSubcategorySelection(chat_id, subcategory) {
+  const typeParts = subcategory.replace(emojiRegex, '').replace(/\s/g, '').split(':');
+  
+  const secondpart = typeParts[1].trim();
+
+  const lastRow = sheet.getLastRow();
+  const prevRow = sheet.getRange(lastRow, 1, 1, 7).getValues()[0];
+  
+  prevRow[3] = secondpart;
+  sheet.getRange(lastRow, 1, 1, prevRow.length).setValues([prevRow]);
+  sendBanks(chat_id, banks);
+}
+
+
+
+function handleAmountInput(chat_id, amount) {
+  
+  const lastRow = sheet.getLastRow();
+  const prevRow = sheet.getRange(lastRow, 1, 1, 7).getValues()[0];
+  
+  prevRow[5] = amount;
+  sheet.getRange(lastRow, 1, 1, prevRow.length).setValues([prevRow]);
+  sendText(chat_id, `Введи описание:`);
+  
+}
+
+function sendKeyboard(chat_id, text, buttons) {
+  const keyboard = {
+    keyboard: buttons,
+    one_time_keyboard: true,
+    resize_keyboard: true
+  };
+
+  const data = {
+    method: 'sendMessage',
+    chat_id: String(chat_id),
+    text: text,
+    reply_markup: JSON.stringify(keyboard)
+  };
+
+  UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'post', payload: data });
+}
+
+
+function handleDescriptionInput(chat_id, description) {
+  
+  const lastRow = sheet.getLastRow();
+  const prevRow = sheet.getRange(lastRow, 1, 1, 7).getValues()[0];
+  prevRow[4] = description
+  sheet.getRange(lastRow, 1, 1, prevRow.length).setValues([prevRow]);
+  sendText(chat_id, `Строка добавлена.\n\nВыбрана: \nкатегория: ${prevRow[2]}; \nподкатегория: ${prevRow[3]}; \nбанк: ${prevRow[1]}. \n\nВведена: \nсумма: ${prevRow[5]}; \nописание: ${prevRow[4]}.`);
+  sendKeyboard(chat_id, 'Выбери действие или давай создадим новое! Я готов к 🐾 приключениям!', [[{ text: 'Внести новую запись' }, { text: 'Удалить последнюю строку' }],
+  ]);
+
+}
+
+
+function sendBanks(chat_id, banksArray) {
+  const keyboard = {
+    keyboard: [
+      ...banksArray.map(bank => [{ text: `Банк: ${bank}` }])
+      
+    ],
+    one_time_keyboard: true,
+    resize_keyboard: true
+  };
+
+  const data = {
+    method: 'sendMessage',
+    chat_id: String(chat_id),
+    text: 'Выбери банк:',
+    reply_markup: JSON.stringify(keyboard)
+  };
+
+  UrlFetchApp.fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'post', payload: data });
+}
+
+
+function handleBankSelection(chat_id, type) {
+  
+  const typeParts = type.replace(emojiRegex, '').replace(/\s/g, '').split(':'); 
+  const bank = typeParts[1].trim();
+  const lastRow = sheet.getLastRow();
+  const prevRow = sheet.getRange(lastRow, 1, 1, 7).getValues()[0];
+
+  
+  prevRow[1] = bank;
+  sheet.getRange(lastRow, 1, 1, prevRow.length).setValues([prevRow]);
+
+  sendText(chat_id, `Выбрана категория: ${prevRow[2]}, подкатегория: ${prevRow[3]} и банк: ${prevRow[1]}. Введи сумму:`);
+}
+
+function handleDeleteRecord(chat_id) {
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.deleteRow(lastRow);
+    sendText(chat_id, `Последняя запись удалена.`);
+    sendKeyboard(chat_id, 'Выбери действие или давай создадим новое! Я готов к 🐾 приключениям!', [
+    [{ text: 'Внести новую запись' }, { text: 'Удалить последнюю строку' }],
+  ]);
+  } else {
+    sendText(chat_id, `Таблица пуста.`);
+  }
+}
+
+function doPost(e) {
+  try {
+    const lastRow = sheet.getLastRow();
+    const prevRow = sheet.getRange(lastRow, 1, 1, 7).getValues()[0];
+    const contents = JSON.parse(e.postData.contents);
+    const chat_id = contents.message.chat.id;
+    const text = contents.message.text;
+
+    switch(text) {
+      case '/start':
+        sendIncomeOrExpenses(chat_id);
+        break;
+      case '💰 Доход':
+      case '🧾 Расход':
+        sendCategories(chat_id, text === '💰 Доход' ? 'income' : 'expenses');
+        break;
+      case 'Внести новую запись':
+        sendIncomeOrExpenses(chat_id);
+        break;
+      case 'Удалить последнюю строку':
+      case '/delete':
+        handleDeleteRecord(chat_id);
+        break;
+      case '/help':
+         sendText(chat_id, 'Привет! Я могу помочь тебе вести учет твоих расходов и доходов. Вот, что я умею:\n\n- Для начала работы набери "/start";\n- Чтобы удалить последнюю запись - используй команду "/delete";\n- Чтобы внести доход, расход, категорию, подкатегорию и банк - выбери соответствующую кнопку из списка;\n- Чтобы добавить описание и сумму - используй поле ввода текста;\n- Чтобы посмотреть список доступных команд - нажми на кнопку: ☰ \n\nНе стесняйся попросить у меня помощи в любое время!'); 
+        break;
+      
+      default:
+        if (expenses[text]) {
+          handleCategorySelection(chat_id, text, 'expenses');
+        } else if (income[text]) {
+          handleCategorySelection(chat_id, text, 'income');
+        } else if (text.startsWith('Подкатегория')) {
+          const category = text;
+          handleSubcategorySelection(chat_id, category);
+        } else if (text.startsWith('Банк')) {
+          const type = text;
+          handleBankSelection(chat_id, type);
+        } else if (prevRow && prevRow[5] === '' && !isNaN(text) && prevRow[4] === ''&& prevRow[3] !== ''&& prevRow[1] !== ''&& prevRow[6] !== '') {
+          handleAmountInput(chat_id, text);
+        } else if (prevRow && prevRow[4] === ''&& prevRow[5] !== '') {    
+          handleDescriptionInput(chat_id, text);
+        } else {
+          sendText(chat_id, 'Я не понимаю, что ты говоришь.\n\n Возможно: \n - ты не нажал на кнопку выбора категории, подкатегории или банка; \n - у тебя свернулась клавиатура, найди значок [88] в поле ввода сообщения; \n - ты не ввел сумму цифрами. \n\nПожалуйста, попробуй еще раз.');
+        }
+    }
+  } catch (error) {
+    console.error(error);
+    sendText(chat_id, 'Произошла ошибка. Пожалуйста, попробуйте еще раз позже.');
+  }
+}
+
+
+
+
